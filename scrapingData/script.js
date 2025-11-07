@@ -10,7 +10,7 @@ const LOG_FILE = "../logs.txt";
 const START_MC = 1700001;
 const END_MC = 1769004;
 const CONCURRENCY = 10;
-const BATCH_SIZE = 1000; // number of HTML files per zip
+const BATCH_SIZE = 5; 
 let savedFiles = [];
 async function runCluster() {
 

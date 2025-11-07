@@ -4,7 +4,7 @@ import path from "path";
 import archiver from "archiver";
 
 const SRC_DIR = "../../data";    // folder containing your .html files
-const DEST_DIR = "../../batch";      // folder for zip outputs
+const DEST_DIR = "../batch";      // folder for zip outputs
 const BATCH_SIZE = 500;            // number of HTML files per zip
 
 // await fs.ensureDir(DEST_DIR);
@@ -67,8 +67,10 @@ const BATCH_SIZE = 500;            // number of HTML files per zip
 async function createZipBatch(files, batchIndex) {
     const zipName = `batch_${batchIndex}.zip`;
     const zipPath = path.join(DEST_DIR, zipName);   
+    const filePaths = files.map(mc => path.join(SRC_DIR, `${mc}.html`));
 
-    console.log(`Creating ${zipName} (${files.length} files)...`);
+    console.log(`Creating ${zipName} (${filePaths.length} files)...`);
+    // console.log(files)
 
     await new Promise((resolve, reject) => {
         const output = fs.createWriteStream(zipPath);
@@ -79,7 +81,7 @@ async function createZipBatch(files, batchIndex) {
         });
         archive.on("error", reject);
         archive.pipe(output);
-        files.forEach(file => {
+        filePaths.forEach(file => {
             archive.file(file, { name: path.basename(file) });
         });
         archive.finalize();
