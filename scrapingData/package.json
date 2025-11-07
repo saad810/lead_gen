@@ -1,0 +1,21 @@
+{
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.926.0",
+    "archiver": "^7.0.1",
+    "dotenv": "^17.2.3",
+    "fs-extra": "^11.3.2",
+    "puppeteer": "^24.27.0",
+    "puppeteer-cluster": "^0.24.0"
+  },
+  "name": "dispatch_mc",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "description": ""
+}

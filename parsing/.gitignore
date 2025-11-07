@@ -1,0 +1,5 @@
+node_modules
+.env
+parsed.txt
+parsed.json
+logs.txt
