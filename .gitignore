@@ -6,3 +6,5 @@ data
 batch
 batches
 *.log
+html
+ssh

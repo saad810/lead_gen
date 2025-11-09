@@ -1,95 +1,123 @@
-import { Cluster } from "puppeteer-cluster";
+import puppeteer from "puppeteer-extra";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import fs from "fs";
 import path from "path";
 import uploadToR2 from "./service/upload.js";
 import createZipBatch from "./service/zip.js";
+import { BATCH_SIZE, DATA_DIR, FAILED_MC_LOG_FILE, RESUME_STATE_FILE, TARGET_URL, END_MC, ERR_LOG_FILE, LOG_FILE, REQ_LOG_FILE, START_MC } from "./utils/constants.js";
 
-const TARGET_URL = "https://safer.fmcsa.dot.gov/CompanySnapshot.aspx";
-const DATA_DIR = "../html_data";
-const LOG_FILE = "../logs.txt";
-const START_MC = 1700001;
-const END_MC = 1769004;
-const CONCURRENCY = 10;
-const BATCH_SIZE = 5; 
 let savedFiles = [];
-async function runCluster() {
+let currentMC = null;
 
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-  if (!fs.existsSync(LOG_FILE)) fs.writeFileSync(LOG_FILE, "MC_NUMBER \t FILE_SIZE_KB\n");
+puppeteer.use(StealthPlugin());
 
-  const existingFiles = new Set(
-    fs
-      .readdirSync(DATA_DIR)
-      .filter(f => f.endsWith(".html"))
-      .map(f => parseInt(path.basename(f, ".html"), 10))
-  );
-
-  const pendingMCs = [];
-  for (let mc = START_MC; mc <= END_MC; mc++) {
-    if (!existingFiles.has(mc)) pendingMCs.push(mc);
-  }
-
-  console.log(
-    `Total: ${END_MC - START_MC + 1} | Done: ${existingFiles.size} | Pending: ${pendingMCs.length}`
-  );
-
-  if (pendingMCs.length === 0) {
-    console.log("All MCs already scraped!");
-    return;
-  }
-
-  const cluster = await Cluster.launch({
-    concurrency: Cluster.CONCURRENCY_PAGE,
-    maxConcurrency: CONCURRENCY,
-    puppeteerOptions: {
-      headless: true, // change to true for silent mode
-      defaultViewport: null,
-    },
-    timeout: 180000,
-  });
-
-  await cluster.task(async ({ page, data: mcNumber }) => {
-    try {
-      await page.goto(TARGET_URL, { waitUntil: "domcontentloaded" });
-      await page.click('input[name="query_param"][value="MC_MX"]');
-      await page.type('input[name="query_string"]', mcNumber.toString());
-      await Promise.all([
-        page.click('input[type="submit"][value="Search"]'),
-        page.waitForNavigation({ waitUntil: "domcontentloaded" }),
-      ]);
-
-      const html = await page.content();
-      const filePath = `${DATA_DIR}/${mcNumber}.html`;
-      fs.writeFileSync(filePath, html, "utf8");
-
-      const stats = fs.statSync(filePath);
-      const fileSizeKB = (stats.size / 1024).toFixed(2);
-
-      fs.appendFileSync(LOG_FILE, `${mcNumber} \t ${fileSizeKB} KB\n`);
-      console.log(`Saved MC ${mcNumber} (${fileSizeKB} KB)`);
-      if (fileSizeKB > 35) {
-        savedFiles.push(mcNumber);
-      }
-      if (savedFiles.length >= BATCH_SIZE) {
-        const zipPath = await createZipBatch(savedFiles, Math.floor(mcNumber / BATCH_SIZE));
-        const zipName = path.basename(zipPath);
-        await uploadToR2(zipPath, zipName);
-        savedFiles = [];
-      }
-
-    } catch (err) {
-      console.error(`❌ Failed MC ${mcNumber}: ${err.message}`);
-    }
-  });
-
-  for (const mc of pendingMCs) cluster.queue(mc);
-
-  await cluster.idle();
-  await cluster.close();
-
-  console.log("🏁 All scraping complete!");
+function ensureFile(filePath) {
+  if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, "", "utf8");
 }
 
-runCluster().catch(console.error);
+function logToFile(file, message) {
+  fs.appendFileSync(file, `${message}\n`);
+}
 
-// uploadToR2("../batch/batch_0.zip", "batch_0.zip").catch(console.error);
+async function loadResume() {
+  if (fs.existsSync(RESUME_STATE_FILE)) {
+    const data = fs.readFileSync(RESUME_STATE_FILE, "utf8").trim();
+    if (data) return data.split("\n").map(Number);
+  }
+  return [];
+}
+
+async function saveResume(mcNumber) {
+  fs.writeFileSync(RESUME_STATE_FILE, `${mcNumber}\n`);
+}
+
+async function deleteFiles(files) {
+  for (const name of files) {
+    try {
+      fs.unlinkSync(path.join(DATA_DIR, `${name}.html`));
+    } catch { }
+  }
+}
+
+async function scrapeMC(page, mcNumber) {
+  currentMC = mcNumber;
+  try {
+    await page.goto(TARGET_URL, { waitUntil: "domcontentloaded" });
+
+    await page.click('input[name="query_param"][value="MC_MX"]');
+    await page.type('input[name="query_string"]', mcNumber.toString());
+
+    await Promise.all([
+      page.click('input[type="submit"][value="Search"]'),
+      page.waitForNavigation({ waitUntil: "domcontentloaded" }),
+    ]);
+
+    const html = await page.content();
+    const filePath = path.join(DATA_DIR, `${mcNumber}.html`);
+    fs.writeFileSync(filePath, html, "utf8");
+
+    const fileSizeKB = (fs.statSync(filePath).size / 1024).toFixed(2);
+    logToFile(LOG_FILE, `${mcNumber} \t ${fileSizeKB} KB`);
+    console.log(`Saved MC ${mcNumber} (${fileSizeKB} KB)`);
+
+    if (fileSizeKB > 35) savedFiles.push(mcNumber);
+    else fs.unlinkSync(filePath);
+
+    if (savedFiles.length >= BATCH_SIZE) {
+      const zipPath = await createZipBatch(savedFiles, Math.floor(mcNumber / BATCH_SIZE));
+      await uploadToR2(zipPath, path.basename(zipPath));
+      await deleteFiles(savedFiles);
+      // fs.unlinkSync(zipPath);
+      savedFiles = [];
+    }
+
+    await saveResume(mcNumber);
+  } catch (err) {
+    console.error(`Failed MC ${mcNumber}: ${err.message}`);
+    logToFile(FAILED_MC_LOG_FILE, mcNumber);
+  } finally {
+    // Light page reset (avoid memory leaks)
+    await page.evaluate(() => {
+      document.body.innerHTML = "";
+    });
+  }
+}
+
+async function runScraper() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+  [LOG_FILE, REQ_LOG_FILE, ERR_LOG_FILE, RESUME_STATE_FILE, FAILED_MC_LOG_FILE].forEach(ensureFile);
+
+  const lastMCs = await loadResume();
+  const startMC = lastMCs.length > 0 ? Math.max(...lastMCs) + 1 : START_MC;
+  console.log("Resuming from MC number:", startMC);
+
+  const browser = await puppeteer.launch({
+    headless: true,
+    defaultViewport: null,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+  const page = await browser.newPage();
+
+  // Attach global request/response tracking ONCE
+  page.on("request", req => {
+    if (currentMC)
+      logToFile(REQ_LOG_FILE, `${currentMC} Request: ${req.method()} ${req.url()} [${req.resourceType()}]`);
+  });
+  page.on("requestfailed", req => {
+    if (currentMC)
+      logToFile(ERR_LOG_FILE, `${currentMC} Request failed: ${req.url()} ${req.failure()?.errorText}`);
+  });
+  page.on("response", res => {
+    if (currentMC)
+      logToFile(REQ_LOG_FILE, `${currentMC} Response: ${res.status()} ${res.url()}`);
+  });
+
+  for (let mc = startMC; mc <= END_MC; mc++) {
+    await scrapeMC(page, mc);
+  }
+
+  await browser.close();
+  console.log(" All scraping complete!");
+}
+
+runScraper().catch(console.error);
