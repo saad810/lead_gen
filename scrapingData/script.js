@@ -61,7 +61,10 @@ async function scrapeMC(page, mcNumber) {
     console.log(`Saved MC ${mcNumber} (${fileSizeKB} KB)`);
 
     if (fileSizeKB > 35) savedFiles.push(mcNumber);
-    else fs.unlinkSync(filePath);
+    else {
+      logToFile(FAILED_MC_LOG_FILE, mcNumber);
+      fs.unlinkSync(filePath)
+    };
 
     if (savedFiles.length >= BATCH_SIZE) {
       const zipPath = await createZipBatch(savedFiles, Math.floor(mcNumber / BATCH_SIZE));
