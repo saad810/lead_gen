@@ -1,0 +1,2 @@
+1505382 Request failed: https://safer.fmcsa.dot.gov/Images/SAFER_hr.jpg net::ERR_ABORTED
+1505448 Request failed: https://safer.fmcsa.dot.gov/query.asp net::ERR_NETWORK_CHANGED
