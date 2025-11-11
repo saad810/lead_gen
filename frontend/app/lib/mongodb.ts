@@ -9,6 +9,7 @@ const MONGODB_URI = process.env.MONGO_URI;
 //ignore if (!MONGODB_URI) {
 //ignore   throw new Error("Please define the MONGO_URI environment variable");
 //ignore }
+//xczxczx
 const connectMongo = async () => {
   if (!global._mongooseConnection) {
     global._mongooseConnection = mongoose.connect(MONGODB_URI);
