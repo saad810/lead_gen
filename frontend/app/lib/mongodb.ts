@@ -6,12 +6,12 @@ declare global {
 }
 
 const MONGODB_URI = process.env.MONGO_URI;
-//ignore if (!MONGODB_URI) {
-//ignore   throw new Error("Please define the MONGO_URI environment variable");
-//ignore }
-//xczxczx
+
 const connectMongo = async () => {
   if (!global._mongooseConnection) {
+    if (!MONGODB_URI) {
+      throw new Error("MONGO_URI environment variable is not set");
+    }
     global._mongooseConnection = mongoose.connect(MONGODB_URI);
   }
   return global._mongooseConnection;
