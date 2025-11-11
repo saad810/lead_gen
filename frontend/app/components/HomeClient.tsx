@@ -13,43 +13,39 @@ interface Company {
   createdAt?: string;
 }
 
-export default function HomePage() {
-  const [companies, setCompanies] = useState<Company[]>([]);
+export default function HomeClient({ initialData }: { initialData: any }) {
+  const [companies, setCompanies] = useState<Company[]>(initialData.companies || []);
   const [q, setQ] = useState("");
   const [sort, setSort] = useState("mcNumber");
   const [order, setOrder] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [totalPages, setTotalPages] = useState(initialData.totalPages || 1);
   const [loading, setLoading] = useState(false);
   const limit = 20;
 
+  const fetchCompanies = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/companies?q=${q}&sort=${sort}&order=${order}&page=${page}&limit=${limit}`
+      );
+      const data = await res.json();
+      setCompanies(data.companies);
+      setTotalPages(data.totalPages);
+    } catch (err) {
+      console.error("Failed to fetch:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      try {
-        const res = await fetch(
-          `/api/companies?q=${q}&sort=${sort}&order=${order}&page=${page}&limit=${limit}`
-        );
-        const data = await res.json();
-        setCompanies(data.companies);
-        setTotalPages(data.totalPages);
-      } catch (err) {
-        console.error("Failed to fetch:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    if (page === 1 && !q && sort === "mcNumber" && order === "asc") return; // skip initial fetch (we already have SSR data)
+    fetchCompanies();
   }, [q, sort, order, page]);
 
   const copyToClipboard = (text: string) => navigator.clipboard.writeText(text);
-
-  const cleanMcNumber = (mc?: string) => {
-    const number = mc ? mc.replace(/[^0-9]/g, "") : "";
-    console.log("Cleaned MC Number:", number.length, number);
-    return number;
-  };
-
+  const cleanMcNumber = (mc?: string) => (mc ? mc.replace(/[^0-9]/g, "") : "");
   const isNotAuthorized = (status?: string) =>
     status?.toLowerCase().includes("not authorized");
 
@@ -115,9 +111,7 @@ export default function HomePage() {
               </tr>
             </thead>
             <tbody>
-              {companies
-              .filter(c => cleanMcNumber(c.mcNumber)?.length === 7)
-              .map((c) => (
+              {companies.map((c) => (
                 <tr
                   key={c._id}
                   className={`border-b border-gray-200 hover:bg-gray-50 transition ${

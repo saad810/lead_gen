@@ -5,8 +5,10 @@ declare global {
   var _mongooseConnection: Promise<typeof mongoose> | undefined;
 }
 
-const MONGODB_URI = process.env.MONGO_URI || "mongodb+srv://admin:admin@cluster0.cwcv5tj.mongodb.net";
-
+const MONGODB_URI = process.env.MONGO_URI;
+//ignore if (!MONGODB_URI) {
+//ignore   throw new Error("Please define the MONGO_URI environment variable");
+//ignore }
 const connectMongo = async () => {
   if (!global._mongooseConnection) {
     global._mongooseConnection = mongoose.connect(MONGODB_URI);
